@@ -15,10 +15,18 @@ interface BulkTransactionRow {
 
 const Budgeting: React.FC = () => {
   const [activeTab, setActiveTab] = useState('bulk');
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [exchanges, setExchanges] = useState<Exchange[]>([]);
   const [balanceAdjustments, setBalanceAdjustments] = useState<BalanceAdjustment[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
+  
+  const [filters, setFilters] = useState({
+    startDate: '',
+    endDate: '',
+    accountId: '',
+    type: '',
+  });
 
   // Exchange rate features
   const [displayCurrency, setDisplayCurrency] = useState('USD');
@@ -28,7 +36,7 @@ const Budgeting: React.FC = () => {
 
   useEffect(() => {
     loadData();
-  }, [activeTab]);
+  }, [activeTab, filters]);
 
   useEffect(() => {
     convertBalances();
@@ -86,7 +94,15 @@ const Budgeting: React.FC = () => {
       setAccounts(accountsData);
       setCategories(categoriesData);
 
-      if (activeTab === 'exchanges') {
+      if (activeTab === 'transactions') {
+        const filterObj: any = {};
+        if (filters.startDate) filterObj.startDate = filters.startDate;
+        if (filters.endDate) filterObj.endDate = filters.endDate;
+        if (filters.accountId) filterObj.accountId = parseInt(filters.accountId);
+        if (filters.type) filterObj.type = filters.type;
+        
+        setTransactions(await window.electronAPI.getTransactions(filterObj));
+      } else if (activeTab === 'exchanges') {
         setExchanges(await window.electronAPI.getExchanges());
       } else if (activeTab === 'adjustments') {
         setBalanceAdjustments(await window.electronAPI.getBalanceAdjustments());
@@ -199,6 +215,20 @@ const Budgeting: React.FC = () => {
             📊 Bulk Entry
           </button>
           <button
+            onClick={() => setActiveTab('transactions')}
+            style={{
+              padding: '10px 20px',
+              border: 'none',
+              background: activeTab === 'transactions' ? '#3498db' : 'transparent',
+              color: activeTab === 'transactions' ? 'white' : '#2c3e50',
+              cursor: 'pointer',
+              borderRadius: '4px 4px 0 0',
+              fontWeight: activeTab === 'transactions' ? 'bold' : 'normal',
+            }}
+          >
+            📋 Transactions List
+          </button>
+          <button
             onClick={() => setActiveTab('adjustments')}
             style={{
               padding: '10px 20px',
@@ -228,6 +258,55 @@ const Budgeting: React.FC = () => {
           </button>
         </div>
 
+        {activeTab === 'transactions' && (
+          <>
+            <div className="filters">
+              <div className="form-group">
+                <label>Start Date</label>
+                <input
+                  type="date"
+                  value={filters.startDate}
+                  onChange={(e) => setFilters({ ...filters, startDate: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>End Date</label>
+                <input
+                  type="date"
+                  value={filters.endDate}
+                  onChange={(e) => setFilters({ ...filters, endDate: e.target.value })}
+                />
+              </div>
+              <div className="form-group">
+                <label>Account</label>
+                <select
+                  value={filters.accountId}
+                  onChange={(e) => setFilters({ ...filters, accountId: e.target.value })}
+                >
+                  <option value="">All Accounts</option>
+                  {accounts.map((account) => (
+                    <option key={account.id} value={account.id}>
+                      {account.name}{account.owner ? ` - ${account.owner}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Type</label>
+                <select
+                  value={filters.type}
+                  onChange={(e) => setFilters({ ...filters, type: e.target.value })}
+                >
+                  <option value="">All Types</option>
+                  <option value="income">Income</option>
+                  <option value="expense">Expense</option>
+                </select>
+              </div>
+            </div>
+            <TransactionsListTable transactions={transactions} />
+          </>
+        )}
+
         {activeTab === 'bulk' && (
           <BulkTransactionEntry
             accounts={accounts}
@@ -250,6 +329,65 @@ const Budgeting: React.FC = () => {
     </div>
   );
 };
+
+const TransactionsListTable: React.FC<{
+  transactions: any[];
+}> = ({ transactions }) => (
+  <div>
+    <div style={{ marginBottom: '15px', padding: '15px', background: '#e3f2fd', borderRadius: '8px' }}>
+      <h4 style={{ margin: '0 0 10px 0', color: '#1976d2' }}>📋 View All Transactions</h4>
+      <p style={{ margin: 0, color: '#1565c0', fontSize: '14px' }}>
+        This is a read-only list. To add transactions, use the <strong>📊 Bulk Entry</strong> tab.
+      </p>
+    </div>
+    {transactions.length === 0 ? (
+      <p style={{ textAlign: 'center', color: '#7f8c8d', padding: '40px' }}>
+        No transactions found for the selected filters
+      </p>
+    ) : (
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Account</th>
+            <th>Category</th>
+            <th>Type</th>
+            <th>Amount</th>
+            <th>Description</th>
+          </tr>
+        </thead>
+        <tbody>
+          {transactions.map((transaction) => (
+            <tr key={transaction.id}>
+              <td>{formatDate(transaction.date)}</td>
+              <td>{transaction.account_name}</td>
+              <td>{transaction.category_name}</td>
+              <td>
+                <span
+                  style={{
+                    padding: '4px 8px',
+                    borderRadius: '4px',
+                    background: transaction.type === 'income' ? '#27ae60' : '#e74c3c',
+                    color: 'white',
+                    fontSize: '12px',
+                  }}
+                >
+                  {transaction.type}
+                </span>
+              </td>
+              <td style={{ fontWeight: 'bold', color: transaction.type === 'income' ? '#27ae60' : '#e74c3c' }}>
+                {transaction.type === 'income' ? '+' : '-'}
+                {transaction.currency_symbol}
+                {transaction.amount.toFixed(2)}
+              </td>
+              <td>{transaction.description || '-'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    )}
+  </div>
+);
 
 const BalanceAdjustmentsTable: React.FC<{
   adjustments: BalanceAdjustment[];
